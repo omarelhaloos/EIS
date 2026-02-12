@@ -92,6 +92,49 @@ def load_spectrum(file_buffer) -> np.ndarray:
     return numeric_df.values
 
 
+def load_mat_spectrum(file_buffer) -> np.ndarray:
+    """
+    Load an EIS spectrum from a .mat file and apply the SAME preprocessing
+    used during model training (load_and_preprocess_data in ml_model.py):
+
+        1. Extract x_data  → shape (N, channels, freq_points)
+        2. swapaxes(1, 2)  → shape (N, freq_points, channels)
+        3. Augment: append negated channels → (N, freq_points, 2*channels)
+        4. Take the FIRST sample and flatten → (1, freq_points * 2 * channels)
+
+    This produces the exact feature count the GradientBoostingRegressor expects
+    (e.g. 100 freq_points × 3 channels × 2 = 600 features).
+    """
+    import scipy.io
+
+    try:
+        mat = scipy.io.loadmat(file_buffer)
+    except Exception as e:
+        raise ValueError(f"Failed to read .mat file: {e}")
+
+    if "x_data" not in mat:
+        raise ValueError(
+            "The .mat file must contain an 'x_data' variable "
+            "(same format used for model training)."
+        )
+
+    x = mat["x_data"]  # (N, channels, freq_points)
+
+    # Replicate training preprocessing
+    x = np.swapaxes(x, 1, 2)  # → (N, freq_points, channels)
+
+    n_channels = x.shape[-1]
+    # Augment with negated channels (matches training pipeline)
+    augmented = np.zeros((*x.shape[:-1], n_channels * 2))
+    augmented[:, :, :n_channels] = x
+    for ch in range(n_channels):
+        augmented[:, :, n_channels + ch] = x[:, :, ch] * -1
+
+    # Take first sample, flatten → (1, freq_pts * 2 * channels)
+    sample = augmented[0].flatten().astype(np.float64)
+    return sample.reshape(1, -1)
+
+
 # ---------------------------------------------------------------------------
 # Feature construction
 # ---------------------------------------------------------------------------

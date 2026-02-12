@@ -907,7 +907,7 @@ elif page == "🧠 Model Training":
                 )
                 os.unlink(tmp_path)
 
-            # Flatten input if needed (CNN كان بياخد 3D)
+            # Flatten input if needed
             if len(x_train.shape) > 2:
                 x_train = x_train.reshape(x_train.shape[0], -1)
                 x_test = x_test.reshape(x_test.shape[0], -1)
@@ -999,6 +999,7 @@ elif page == "📉 Corrosion Predictor":
     from corrosion_predictor import (
         load_model as cp_load_model,
         load_spectrum,
+        load_mat_spectrum,
         build_feature_vector,
         predict_corrosion,
         classify_risk,
@@ -1091,9 +1092,9 @@ elif page == "📉 Corrosion Predictor":
         )
     with col_up2:
         spectrum_file = st.file_uploader(
-            "📂 Upload EIS spectrum (.csv)",
-            type=["csv"],
-            help="Upload a CSV file containing EIS impedance spectrum data",
+            "📂 Upload EIS spectrum (.mat or .csv)",
+            type=["mat", "csv"],
+            help="Upload a .mat file (same format as training) or a CSV with EIS impedance data",
         )
 
     # Show current environment config
@@ -1132,14 +1133,21 @@ elif page == "📉 Corrosion Predictor":
         if model_file is None:
             st.error("❌ Please upload a trained model (.pkl) file.")
         elif spectrum_file is None:
-            st.error("❌ Please upload an EIS spectrum (.csv) file.")
+            st.error("❌ Please upload an EIS spectrum (.mat or .csv) file.")
         else:
             try:
                 with st.spinner("Loading model…"):
                     model = cp_load_model(model_file)
 
                 with st.spinner("Processing spectrum…"):
-                    spectrum = load_spectrum(spectrum_file)
+                    file_name = spectrum_file.name.lower()
+                    if file_name.endswith(".mat"):
+                        # .mat files get the same preprocessing as training
+                        # (swapaxes + negated channels + flatten → 600 features)
+                        preprocessed_spectrum = load_mat_spectrum(spectrum_file)
+                        spectrum = preprocessed_spectrum  # already (1, 600)
+                    else:
+                        spectrum = load_spectrum(spectrum_file)
 
                 with st.spinner("Building features & predicting…"):
                     features = build_feature_vector(
