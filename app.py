@@ -886,120 +886,87 @@ elif page == "🧠 Model Training":
             """, unsafe_allow_html=True)
 
         if st.button("🚀 Start Training", use_container_width=True):
-            try:
-                from ml_model import load_and_preprocess_data, make_model
-                import tensorflow as tf
-                from tensorflow import keras
+    try:
+        from ml_model import load_and_preprocess_data
+        from sklearn.ensemble import GradientBoostingRegressor
+        from sklearn.multioutput import MultiOutputRegressor
+        from sklearn.metrics import mean_absolute_error
+        import joblib
 
-                # Save uploaded file temporarily
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".mat") as tmp:
-                    tmp.write(uploaded_file.getvalue())
-                    tmp_path = tmp.name
+        # Save uploaded file temporarily
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mat") as tmp:
+            tmp.write(uploaded_file.getvalue())
+            tmp_path = tmp.name
 
-                with st.spinner("Loading and preprocessing data…"):
-                    x_train, x_test, y_train, y_test = load_and_preprocess_data(
-                        tmp_path, test_size=test_size
-                    )
-                    os.unlink(tmp_path)
+        with st.spinner("Loading and preprocessing data…"):
+            x_train, x_test, y_train, y_test = load_and_preprocess_data(
+                tmp_path, test_size=test_size
+            )
+            os.unlink(tmp_path)
 
-                st.markdown(f"""
-                <div class="metric-row">
-                    <div class="metric-card"><div class="label">Train Samples</div><div class="value">{len(x_train):,}</div></div>
-                    <div class="metric-card"><div class="label">Val Samples</div><div class="value">{len(x_test):,}</div></div>
-                    <div class="metric-card"><div class="label">Input Shape</div><div class="value">{x_train.shape[1:]}</div></div>
-                    <div class="metric-card"><div class="label">Outputs</div><div class="value">6</div></div>
-                </div>
-                """, unsafe_allow_html=True)
+        # Flatten input if needed (CNN كان بياخد 3D)
+        if len(x_train.shape) > 2:
+            x_train = x_train.reshape(x_train.shape[0], -1)
+            x_test = x_test.reshape(x_test.shape[0], -1)
 
-                model = make_model(input_shape=x_train.shape[1:])
-                model.compile(
-                    optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
-                    loss=tf.keras.losses.MeanAbsoluteError(),
-                )
-
-                # Training with progress display
-                progress_bar = st.progress(0, text="Training…")
-                loss_placeholder = st.empty()
-                status_text = st.empty()
-
-                train_losses = []
-                val_losses = []
-
-                class StreamlitCallback(keras.callbacks.Callback):
-                    def on_epoch_end(self, epoch, logs=None):
-                        pct = (epoch + 1) / epochs
-                        progress_bar.progress(pct, text=f"Epoch {epoch+1}/{epochs}")
-                        train_losses.append(logs.get("loss", 0))
-                        val_losses.append(logs.get("val_loss", 0))
-
-                        fig = go.Figure()
-                        fig.add_trace(go.Scatter(
-                            y=train_losses, mode="lines", name="Train Loss",
-                            line=dict(color="#6366f1", width=2),
-                        ))
-                        fig.add_trace(go.Scatter(
-                            y=val_losses, mode="lines", name="Val Loss",
-                            line=dict(color="#06b6d4", width=2),
-                        ))
-                        fig.update_layout(
-                            **PLOTLY_LAYOUT,
-                            title="Training Progress",
-                            xaxis_title="Epoch",
-                            yaxis_title="Loss (MAE)",
-                            height=350,
-                        )
-                        loss_placeholder.plotly_chart(fig, use_container_width=True)
-
-                callbacks = [
-                    StreamlitCallback(),
-                    keras.callbacks.ReduceLROnPlateau(
-                        monitor="val_loss", factor=0.5, patience=20, verbose=0,
-                        mode="min", min_lr=0.000001,
-                    ),
-                    keras.callbacks.EarlyStopping(
-                        monitor="val_loss", patience=60, verbose=0,
-                    ),
-                ]
-
-                history = model.fit(
-                    x_train, y_train,
-                    batch_size=batch_size,
-                    epochs=epochs,
-                    callbacks=callbacks,
-                    validation_data=(x_test, y_test),
-                    verbose=0,
-                )
-
-                progress_bar.progress(1.0, text="✅ Training Complete!")
-                status_text.success(
-                    f"Final — Train Loss: {train_losses[-1]:.4f} | Val Loss: {val_losses[-1]:.4f}"
-                )
-
-                # Save model for download
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".h5") as tmp_model:
-                    model.save(tmp_model.name)
-                    with open(tmp_model.name, "rb") as f:
-                        model_bytes = f.read()
-                    os.unlink(tmp_model.name)
-
-                st.download_button(
-                    "📥 Download Trained Model (.h5)",
-                    data=model_bytes,
-                    file_name="eis_regression_model.h5",
-                    mime="application/octet-stream",
-                    use_container_width=True,
-                )
-
-            except Exception as e:
-                st.error(f"❌ Training failed: {str(e)}")
-                st.exception(e)
-    else:
-        st.markdown("""
-        <div class="glass-card" style="text-align:center; padding:3.5rem 2rem;">
-            <h3 style="color:#8b5cf6; font-size:1.3rem;">📤 Upload a .mat dataset to begin training</h3>
-            <p style="color:#64748b; margin-top:0.6rem;">The file should contain <code>x_data</code> (spectra) and <code>y_data</code> (parameters) arrays.</p>
+        st.markdown(f"""
+        <div class="metric-row">
+            <div class="metric-card"><div class="label">Train Samples</div><div class="value">{len(x_train):,}</div></div>
+            <div class="metric-card"><div class="label">Val Samples</div><div class="value">{len(x_test):,}</div></div>
+            <div class="metric-card"><div class="label">Features</div><div class="value">{x_train.shape[1]}</div></div>
+            <div class="metric-card"><div class="label">Outputs</div><div class="value">{y_train.shape[1]}</div></div>
         </div>
         """, unsafe_allow_html=True)
+
+        with st.spinner("Training Gradient Boosting model…"):
+
+            base_model = GradientBoostingRegressor(
+                n_estimators=300,
+                learning_rate=0.05,
+                max_depth=4,
+                random_state=42
+            )
+
+            model = MultiOutputRegressor(base_model)
+            model.fit(x_train, y_train)
+
+        # Predictions
+        y_train_pred = model.predict(x_train)
+        y_test_pred = model.predict(x_test)
+
+        train_mae = mean_absolute_error(y_train, y_train_pred)
+        val_mae = mean_absolute_error(y_test, y_test_pred)
+
+        st.success(
+            f"✅ Training Complete! — Train MAE: {train_mae:.4f} | Val MAE: {val_mae:.4f}"
+        )
+
+        # Save model
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pkl") as tmp_model:
+            joblib.dump(model, tmp_model.name)
+            with open(tmp_model.name, "rb") as f:
+                model_bytes = f.read()
+            os.unlink(tmp_model.name)
+
+        st.download_button(
+            "📥 Download Trained Model (.pkl)",
+            data=model_bytes,
+            file_name="eis_gradient_boost_model.pkl",
+            mime="application/octet-stream",
+            use_container_width=True,
+        )
+
+    except Exception as e:
+        st.error(f"❌ Training failed: {str(e)}")
+        st.exception(e)
+
+else:
+    st.markdown("""
+    <div class="glass-card" style="text-align:center; padding:3.5rem 2rem;">
+        <h3 style="color:#8b5cf6; font-size:1.3rem;">📤 Upload a .mat dataset to begin training</h3>
+        <p style="color:#64748b; margin-top:0.6rem;">The file should contain <code>x_data</code> (spectra) and <code>y_data</code> (parameters) arrays.</p>
+    </div>
+    """, unsafe_allow_html=True)
 
         # Architecture info cards
         st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
