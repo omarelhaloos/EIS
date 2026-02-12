@@ -1374,7 +1374,7 @@ elif page == "📉 Corrosion Predictor":
                     </div>
                     <div class="metric-card">
                         <div class="label">Features Used</div>
-                        <div class="value">{features.shape[1]}</div>
+                        <div class="value">{features['full'].shape[1]}</div>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)

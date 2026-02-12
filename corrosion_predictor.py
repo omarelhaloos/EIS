@@ -122,57 +122,65 @@ def build_feature_vector(
     sulfur: float,
     flow_velocity: float,
     service_years: int,
-) -> np.ndarray:
+) -> dict:
     """
-    Build the final feature vector by combining EIS spectrum stats
-    with environmental conditions.
+    Build candidate feature vectors for prediction.
 
-    The spectrum is summarised via statistical features (mean, std, min, max,
-    median) per column, then concatenated with encoded environmental params.
-    This makes the feature vector independent of spectrum length.
+    Returns a dict with three candidate arrays so that predict_corrosion
+    can pick the one matching the model's expected feature count:
+        - "full"     : flattened spectrum + material one-hot + env params
+        - "spectrum" : flattened spectrum only
+        - "env"      : material one-hot + env params only
 
-    Returns:
-        2D array of shape (1, n_features) ready for model.predict()
+    Each value is a 2D array of shape (1, n_features).
     """
-    # Statistical summary of spectrum (handles any number of columns/rows)
-    flat_spectrum = spectrum.flatten()
-    spectrum_features = [
-        np.mean(flat_spectrum),
-        np.std(flat_spectrum),
-        np.min(flat_spectrum),
-        np.max(flat_spectrum),
-        np.median(flat_spectrum),
-    ]
+    flat_spectrum = spectrum.flatten().astype(np.float64)
 
-    # Per-column stats if multiple columns exist
-    if spectrum.ndim == 2 and spectrum.shape[1] > 1:
-        for col_idx in range(spectrum.shape[1]):
-            col = spectrum[:, col_idx]
-            spectrum_features.extend([
-                np.mean(col), np.std(col), np.min(col), np.max(col),
-            ])
-
-    # Environmental features
     material_encoded = encode_material(material)
     env_features = [
         temperature, pressure, ph, sulfur, flow_velocity, float(service_years),
     ]
+    env_arr = np.array(material_encoded + env_features, dtype=np.float64)
 
-    feature_vector = spectrum_features + material_encoded + env_features
-    return np.array(feature_vector).reshape(1, -1)
+    full = np.concatenate([flat_spectrum, env_arr])
+    return {
+        "full": full.reshape(1, -1),
+        "spectrum": flat_spectrum.reshape(1, -1),
+        "env": env_arr.reshape(1, -1),
+    }
 
 
-def predict_corrosion(model, feature_vector: np.ndarray) -> float:
+def predict_corrosion(model, features: dict) -> float:
     """
-    Run prediction and return scalar corrosion rate.
+    Run prediction, automatically selecting the feature vector that
+    matches the model's expected input size.
 
-    Handles models that return arrays of various shapes.
+    Parameters:
+        model    : a fitted sklearn estimator with .predict()
+        features : dict returned by build_feature_vector()
+
+    Returns the predicted corrosion rate as a float.
     """
-    prediction = model.predict(feature_vector)
-    pred = np.asarray(prediction).flatten()
-    if len(pred) == 0:
-        raise ValueError("Model returned an empty prediction.")
-    return float(pred[0])
+    # Determine expected feature count from the model
+    expected = getattr(model, "n_features_in_", None)
+
+    # Try candidates in preference order
+    for key in ("full", "spectrum", "env"):
+        vec = features[key]
+        n = vec.shape[1]
+        if expected is not None and n == expected:
+            prediction = model.predict(vec)
+            return float(np.asarray(prediction).flatten()[0])
+
+    # If no exact match found, try full vector anyway (let sklearn raise
+    # a clear error with actual vs expected counts)
+    try:
+        prediction = model.predict(features["full"])
+        return float(np.asarray(prediction).flatten()[0])
+    except ValueError:
+        # Last resort: try spectrum-only
+        prediction = model.predict(features["spectrum"])
+        return float(np.asarray(prediction).flatten()[0])
 
 
 # ---------------------------------------------------------------------------
