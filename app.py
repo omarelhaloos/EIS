@@ -2,10 +2,11 @@
 EIS Analyzer — Streamlit Application
 Interactive Electrochemical Impedance Spectroscopy simulator and ML-based parameter predictor.
 
-Three pages:
-  1. 🔬 EIS Simulator  — generate impedance spectra with interactive controls
-  2. 🧠 Model Training — train a 1D-CNN regression model
-  3. 📊 Model Evaluation — evaluate predictions vs ground truth
+Four pages:
+  1. 🔬 EIS Simulator      — generate impedance spectra with interactive controls
+  2. 🧠 Model Training     — train a 1D-CNN regression model
+  3. 📊 Model Evaluation   — evaluate predictions vs ground truth
+  4. 📉 Corrosion Predictor — industrial corrosion rate prediction from EIS data
 
 Author: Dulyawat Doonyapisut (charting9@gmail.com)
 """
@@ -566,7 +567,7 @@ with st.sidebar:
     st.markdown("---")
     page = st.radio(
         "Navigate",
-        ["🔬 EIS Simulator", "🧠 Model Training", "📊 Model Evaluation"],
+        ["🔬 EIS Simulator", "🧠 Model Training", "📊 Model Evaluation", "📉 Corrosion Predictor"],
         label_visibility="collapsed",
     )
     st.markdown("---")
@@ -1183,4 +1184,291 @@ elif page == "📊 Model Evaluation":
                 <h3 style="color:#ef4444;">MSE</h3>
                 <p style="color:#94a3b8;">Mean Squared Error — penalizes larger errors more heavily than MAE.</p>
             </div>
+            </div>
             """, unsafe_allow_html=True)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PAGE 4: Corrosion Predictor
+# ═══════════════════════════════════════════════════════════════════════════
+elif page == "📉 Corrosion Predictor":
+    from corrosion_predictor import (
+        load_model as cp_load_model,
+        load_spectrum,
+        build_feature_vector,
+        predict_corrosion,
+        classify_risk,
+        create_gauge_chart,
+        get_env_ranges,
+        MATERIAL_TYPES,
+    )
+
+    # Header
+    st.markdown("""
+    <div class="main-header">
+        <h1>Corrosion Predictor</h1>
+        <p>Predict corrosion rates from EIS spectrum data and environmental conditions</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Load environment ranges from CSV ──
+    _csv_path = os.path.join(os.path.dirname(__file__), "corrosion_pipeline_data.csv")
+    env_ranges = get_env_ranges(_csv_path)
+
+    # ── Sidebar: Environmental Conditions ──
+    with st.sidebar:
+        st.markdown("### 🌡️ Environmental Conditions")
+        st.caption("Set the operating environment for corrosion prediction")
+
+        material = st.selectbox(
+            "Material",
+            options=env_ranges["materials"],
+            index=1,  # default Carbon Steel
+            help="Pipeline or component material type",
+        )
+
+        temperature = st.slider(
+            "Temperature (°C)",
+            min_value=env_ranges["temperature_c"][0],
+            max_value=env_ranges["temperature_c"][1],
+            value=round((env_ranges["temperature_c"][0] + env_ranges["temperature_c"][1]) / 2, 1),
+            step=0.5,
+        )
+
+        pressure = st.slider(
+            "Pressure (bar)",
+            min_value=env_ranges["pressure_bar"][0],
+            max_value=env_ranges["pressure_bar"][1],
+            value=round((env_ranges["pressure_bar"][0] + env_ranges["pressure_bar"][1]) / 2, 1),
+            step=0.5,
+        )
+
+        ph = st.slider(
+            "pH",
+            min_value=env_ranges["ph"][0],
+            max_value=env_ranges["ph"][1],
+            value=round((env_ranges["ph"][0] + env_ranges["ph"][1]) / 2, 2),
+            step=0.01,
+        )
+
+        sulfur = st.slider(
+            "Sulfur Content (ppm)",
+            min_value=env_ranges["sulfur_ppm"][0],
+            max_value=env_ranges["sulfur_ppm"][1],
+            value=(env_ranges["sulfur_ppm"][0] + env_ranges["sulfur_ppm"][1]) // 2,
+            step=1,
+        )
+
+        flow_velocity = st.slider(
+            "Flow Velocity (m/s)",
+            min_value=env_ranges["flow_velocity_ms"][0],
+            max_value=env_ranges["flow_velocity_ms"][1],
+            value=round((env_ranges["flow_velocity_ms"][0] + env_ranges["flow_velocity_ms"][1]) / 2, 2),
+            step=0.01,
+        )
+
+        service_years = st.slider(
+            "Service Years",
+            min_value=env_ranges["service_years"][0],
+            max_value=env_ranges["service_years"][1],
+            value=(env_ranges["service_years"][0] + env_ranges["service_years"][1]) // 2,
+            step=1,
+        )
+
+    # ── Main content: file uploaders ──
+    col_up1, col_up2 = st.columns(2)
+    with col_up1:
+        model_file = st.file_uploader(
+            "📂 Upload trained model (.pkl)",
+            type=["pkl"],
+            help="Upload a scikit-learn model saved with joblib",
+        )
+    with col_up2:
+        spectrum_file = st.file_uploader(
+            "📂 Upload EIS spectrum (.csv)",
+            type=["csv"],
+            help="Upload a CSV file containing EIS impedance spectrum data",
+        )
+
+    # Show current environment config
+    st.markdown(f"""
+    <div class="metric-row">
+        <div class="metric-card">
+            <div class="label">Material</div>
+            <div class="value" style="font-size:0.85rem;">{material}</div>
+        </div>
+        <div class="metric-card">
+            <div class="label">Temp</div>
+            <div class="value">{temperature}°C</div>
+        </div>
+        <div class="metric-card">
+            <div class="label">Pressure</div>
+            <div class="value">{pressure} bar</div>
+        </div>
+        <div class="metric-card">
+            <div class="label">pH</div>
+            <div class="value">{ph}</div>
+        </div>
+        <div class="metric-card">
+            <div class="label">Sulfur</div>
+            <div class="value">{sulfur} ppm</div>
+        </div>
+        <div class="metric-card">
+            <div class="label">Flow</div>
+            <div class="value">{flow_velocity} m/s</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Predict button ──
+    if st.button("⚡ Predict Corrosion Rate", use_container_width=True):
+        # Validation
+        if model_file is None:
+            st.error("❌ Please upload a trained model (.pkl) file.")
+        elif spectrum_file is None:
+            st.error("❌ Please upload an EIS spectrum (.csv) file.")
+        else:
+            try:
+                with st.spinner("Loading model…"):
+                    model = cp_load_model(model_file)
+
+                with st.spinner("Processing spectrum…"):
+                    spectrum = load_spectrum(spectrum_file)
+
+                with st.spinner("Building features & predicting…"):
+                    features = build_feature_vector(
+                        spectrum=spectrum,
+                        material=material,
+                        temperature=temperature,
+                        pressure=pressure,
+                        ph=ph,
+                        sulfur=float(sulfur),
+                        flow_velocity=flow_velocity,
+                        service_years=service_years,
+                    )
+
+                    corrosion_rate = predict_corrosion(model, features)
+                    risk_label, risk_color, risk_bg, risk_border = classify_risk(corrosion_rate)
+
+                # ── Results ──
+                st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+
+                # Metric cards
+                st.markdown(f"""
+                <div class="metric-row">
+                    <div class="metric-card" style="flex:2;">
+                        <div class="label">Predicted Corrosion Rate</div>
+                        <div class="value" style="font-size:2rem; color:{risk_color};">
+                            {corrosion_rate:.4f} <span style="font-size:0.9rem;">mm/yr</span>
+                        </div>
+                    </div>
+                    <div class="metric-card" style="flex:1; border-color:{risk_border}; background:{risk_bg};">
+                        <div class="label">Risk Level</div>
+                        <div class="value" style="font-size:1.8rem; color:{risk_color};">
+                            {"🟢" if risk_label == "Low" else "🟡" if risk_label == "Moderate" else "🔴"} {risk_label}
+                        </div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="label">Spectrum Points</div>
+                        <div class="value">{spectrum.shape[0]}</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="label">Features Used</div>
+                        <div class="value">{features.shape[1]}</div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                # Gauge chart
+                st.markdown('<div class="glass-card"><h3>📊 Corrosion Gauge</h3></div>',
+                            unsafe_allow_html=True)
+                gauge_fig = create_gauge_chart(corrosion_rate, risk_label, risk_color)
+                st.plotly_chart(gauge_fig, use_container_width=True)
+
+                # Risk explanation
+                st.markdown(f"""
+                <div class="glass-card">
+                    <h3>📋 Risk Assessment Summary</h3>
+                    <table style="width:100%; border-collapse:collapse; margin-top:0.8rem;">
+                        <tr style="border-bottom:1px solid rgba(99,102,241,0.15);">
+                            <td style="padding:0.6rem; color:#94a3b8;">Risk Level</td>
+                            <td style="padding:0.6rem; font-weight:700; color:{risk_color};">{risk_label}</td>
+                        </tr>
+                        <tr style="border-bottom:1px solid rgba(99,102,241,0.15);">
+                            <td style="padding:0.6rem; color:#94a3b8;">Corrosion Rate</td>
+                            <td style="padding:0.6rem; color:#e8edf5;">{corrosion_rate:.4f} mm/yr</td>
+                        </tr>
+                        <tr style="border-bottom:1px solid rgba(99,102,241,0.15);">
+                            <td style="padding:0.6rem; color:#94a3b8;">Material</td>
+                            <td style="padding:0.6rem; color:#e8edf5;">{material}</td>
+                        </tr>
+                        <tr style="border-bottom:1px solid rgba(99,102,241,0.15);">
+                            <td style="padding:0.6rem; color:#94a3b8;">Temperature</td>
+                            <td style="padding:0.6rem; color:#e8edf5;">{temperature}°C</td>
+                        </tr>
+                        <tr style="border-bottom:1px solid rgba(99,102,241,0.15);">
+                            <td style="padding:0.6rem; color:#94a3b8;">pH</td>
+                            <td style="padding:0.6rem; color:#e8edf5;">{ph}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding:0.6rem; color:#94a3b8;">Service Years</td>
+                            <td style="padding:0.6rem; color:#e8edf5;">{service_years} years</td>
+                        </tr>
+                    </table>
+                </div>
+                """, unsafe_allow_html=True)
+
+            except ValueError as ve:
+                st.error(f"❌ Validation Error: {ve}")
+            except Exception as e:
+                st.error(f"❌ Prediction failed: {str(e)}")
+                st.exception(e)
+
+    else:
+        # Placeholder
+        st.markdown("""
+        <div class="glass-card" style="text-align:center; padding:3.5rem 2rem;">
+            <h3 style="color:#8b5cf6; font-size:1.3rem;">Upload a trained model and EIS spectrum to predict corrosion rate</h3>
+            <p style="color:#64748b; margin-top:0.6rem;">Configure environmental conditions in the sidebar, then click ⚡ Predict.</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Info cards for risk levels
+        st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+        st.markdown("### 🎯 Risk Classification")
+        risk_cols = st.columns(3)
+        risk_items = [
+            ("🟢", "Low Risk", "< 0.1 mm/yr", "Minimal corrosion — safe for continued operation", "fc-green"),
+            ("🟡", "Moderate Risk", "0.1 – 0.5 mm/yr", "Noticeable corrosion — schedule maintenance", "fc-amber"),
+            ("🔴", "Severe Risk", "≥ 0.5 mm/yr", "Critical corrosion — immediate action required", "fc-purple"),
+        ]
+        for col, (icon, title, threshold, desc, color) in zip(risk_cols, risk_items):
+            with col:
+                st.markdown(f"""
+                <div class="feature-card {color}">
+                    <span class="fc-icon">{icon}</span>
+                    <div class="fc-title">{title}</div>
+                    <div class="fc-desc" style="font-weight:700; margin-bottom:0.3rem;">{threshold}</div>
+                    <div class="fc-desc">{desc}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        # Pipeline data preview
+        st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+        st.markdown("### 📊 Pipeline Corrosion Dataset")
+        st.caption("Reference data used for environmental condition ranges")
+        try:
+            _pipeline_df = pd.read_csv(_csv_path)
+            st.dataframe(
+                _pipeline_df.head(50).style.format({
+                    "temperature_c": "{:.1f}",
+                    "pressure_bar": "{:.1f}",
+                    "ph": "{:.2f}",
+                    "flow_velocity_ms": "{:.2f}",
+                    "corrosion_rate_mmpy": "{:.3f}",
+                }),
+                use_container_width=True,
+                height=350,
+            )
+        except Exception:
+            st.info("Pipeline dataset not available for preview.")
