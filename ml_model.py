@@ -44,15 +44,17 @@ def load_and_preprocess_data(file_path_or_buffer, test_size=0.2, random_state=42
     y = mat["y_data"]
 
     # --- FIX: ensure y is always 2D (samples × params) ---
-    # np.squeeze can collapse to 1D when there is only 1 sample or 1 param.
-    # Instead, remove only truly extraneous leading/trailing dims and guarantee 2D.
-    y = np.atleast_2d(np.squeeze(y))
-    # If squeeze + atleast_2d produced (params, 1) instead of (1, params) for a
-    # single-sample file, transpose so rows = samples.
-    if y.shape[0] == 1 and y.ndim == 2:
-        pass  # already (1, params)
-    elif y.ndim == 2 and y.shape[1] == 1 and y.shape[0] > 1:
-        y = y.T  # was stored column-wise for a single sample
+    # Remove extraneous dimensions first
+    y = np.squeeze(y)
+
+    if y.ndim == 1:
+        # y is 1D — reshape to (samples, 1) as single-parameter output
+        y = y.reshape(-1, 1)
+    elif y.ndim == 2:
+        # y is 2D — ensure orientation matches x samples
+        n_samples_x = x.shape[0]
+        if y.shape[0] != n_samples_x and y.shape[1] == n_samples_x:
+            y = y.T  # was stored transposed
 
     x = np.swapaxes(x, 1, 2)
 

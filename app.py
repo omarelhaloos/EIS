@@ -781,12 +781,15 @@ if page == "🔬 EIS Simulator":
         # Download buttons
         col_dl1, col_dl2 = st.columns(2)
         with col_dl1:
-            # .mat download
+            # .mat download — save spectra features + circuit parameters
             buf = io.BytesIO()
-            from eis_simulation import export_data
-            # For single-circuit download, wrap Zsum in array
-            Circuit_spec = np.expand_dims(Zsum, axis=0)
-            x_data, y_data = export_data(Circuit_spec, sz, npt, numc=1)
+            # Build x_data: (size_number, 3, number_of_point) from Zsum
+            imge = Zsum.imag
+            phase = np.degrees(np.arctan2(Zsum.imag, Zsum.real))
+            mag = np.absolute(Zsum)
+            x_data = np.stack([imge, phase, mag], axis=1)  # (sz, 3, npt)
+            # y_data: actual circuit parameters (sz, n_params)
+            y_data = Zparam
             mdic = {"x_data": x_data, "y_data": y_data}
             scipy.io.savemat(buf, mdic)
             st.download_button(
