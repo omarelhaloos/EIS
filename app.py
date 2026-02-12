@@ -999,7 +999,6 @@ elif page == "📉 Corrosion Predictor":
     from corrosion_predictor import (
         load_model as cp_load_model,
         load_spectrum,
-        load_mat_spectrum,
         build_feature_vector,
         predict_corrosion,
         classify_risk,
