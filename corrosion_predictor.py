@@ -311,3 +311,90 @@ def get_env_ranges(csv_path: str) -> dict:
         "flow_velocity_ms": (float(df["flow_velocity_ms"].min()), float(df["flow_velocity_ms"].max())),
         "service_years": (int(df["service_years"].min()), int(df["service_years"].max())),
     }
+
+
+# ---------------------------------------------------------------------------
+# Environmental model — train from CSV data
+# ---------------------------------------------------------------------------
+def train_env_model(csv_path: str) -> dict:
+    """
+    Train a GradientBoosting model on corrosion_pipeline_data.csv.
+
+    Features: material (one-hot) + temperature, pressure, ph,
+              sulfur, flow_velocity, service_years
+    Target:   corrosion_rate_mmpy
+
+    Returns dict with keys: model, train_mae, test_mae, train_r2, test_r2,
+                            feature_names, feature_importances
+    """
+    from sklearn.ensemble import GradientBoostingRegressor
+    from sklearn.model_selection import train_test_split
+    from sklearn.metrics import mean_absolute_error, r2_score
+
+    df = pd.read_csv(csv_path)
+
+    # One-hot encode material
+    material_dummies = pd.get_dummies(df["material"], prefix="mat")
+    X = pd.concat([
+        material_dummies,
+        df[["temperature_c", "pressure_bar", "ph",
+            "sulfur_ppm", "flow_velocity_ms", "service_years"]],
+    ], axis=1)
+    y = df["corrosion_rate_mmpy"]
+
+    feature_names = list(X.columns)
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X.values, y.values, test_size=0.2, random_state=42,
+    )
+
+    model = GradientBoostingRegressor(
+        n_estimators=300,
+        learning_rate=0.05,
+        max_depth=4,
+        random_state=42,
+    )
+    model.fit(X_train, y_train)
+
+    y_train_pred = model.predict(X_train)
+    y_test_pred = model.predict(X_test)
+
+    return {
+        "model": model,
+        "train_mae": mean_absolute_error(y_train, y_train_pred),
+        "test_mae": mean_absolute_error(y_test, y_test_pred),
+        "train_r2": r2_score(y_train, y_train_pred),
+        "test_r2": r2_score(y_test, y_test_pred),
+        "feature_names": feature_names,
+        "feature_importances": model.feature_importances_,
+        "y_test": y_test,
+        "y_test_pred": y_test_pred,
+    }
+
+
+def predict_from_env(
+    model,
+    material: str,
+    temperature: float,
+    pressure: float,
+    ph: float,
+    sulfur: float,
+    flow_velocity: float,
+    service_years: int,
+) -> float:
+    """
+    Predict corrosion rate from environmental conditions only.
+
+    Uses the same one-hot encoding as train_env_model.
+    """
+    # Build one-hot material (must match pd.get_dummies order)
+    all_materials = sorted(MATERIAL_TYPES)  # sorted like get_dummies
+    mat_encoded = [1.0 if m == material else 0.0 for m in all_materials]
+
+    features = mat_encoded + [
+        temperature, pressure, ph, sulfur, flow_velocity, float(service_years),
+    ]
+    X = np.array(features, dtype=np.float64).reshape(1, -1)
+    prediction = model.predict(X)
+    return float(prediction[0])
+
