@@ -914,7 +914,7 @@ elif page == "🧠 Model Training":
                 <div class="metric-card"><div class="label">Train Samples</div><div class="value">{len(x_train):,}</div></div>
                 <div class="metric-card"><div class="label">Val Samples</div><div class="value">{len(x_test):,}</div></div>
                 <div class="metric-card"><div class="label">Features</div><div class="value">{x_train.shape[1]}</div></div>
-                <div class="metric-card"><div class="label">Outputs</div><div class="value">{y_train.shape[1]}</div></div>
+                <div class="metric-card"><div class="label">Outputs</div><div class="value">{y_train.shape[1] if y_train.ndim > 1 else 1}</div></div>
             </div>
             """, unsafe_allow_html=True)
 
