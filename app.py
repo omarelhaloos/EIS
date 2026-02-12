@@ -885,88 +885,88 @@ elif page == "🧠 Model Training":
             </div>
             """, unsafe_allow_html=True)
 
-        if st.button("🚀 Start Training", use_container_width=True):
-    try:
-        from ml_model import load_and_preprocess_data
-        from sklearn.ensemble import GradientBoostingRegressor
-        from sklearn.multioutput import MultiOutputRegressor
-        from sklearn.metrics import mean_absolute_error
-        import joblib
+    if st.button("🚀 Start Training", use_container_width=True):
+        try:
+            from ml_model import load_and_preprocess_data
+            from sklearn.ensemble import GradientBoostingRegressor
+            from sklearn.multioutput import MultiOutputRegressor
+            from sklearn.metrics import mean_absolute_error
+            import joblib
 
-        # Save uploaded file temporarily
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mat") as tmp:
-            tmp.write(uploaded_file.getvalue())
-            tmp_path = tmp.name
+            # Save uploaded file temporarily
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mat") as tmp:
+                tmp.write(uploaded_file.getvalue())
+                tmp_path = tmp.name
 
-        with st.spinner("Loading and preprocessing data…"):
-            x_train, x_test, y_train, y_test = load_and_preprocess_data(
-                tmp_path, test_size=test_size
+            with st.spinner("Loading and preprocessing data…"):
+                x_train, x_test, y_train, y_test = load_and_preprocess_data(
+                    tmp_path, test_size=test_size
+                )
+                os.unlink(tmp_path)
+
+            # Flatten input if needed (CNN كان بياخد 3D)
+            if len(x_train.shape) > 2:
+                x_train = x_train.reshape(x_train.shape[0], -1)
+                x_test = x_test.reshape(x_test.shape[0], -1)
+
+            st.markdown(f"""
+            <div class="metric-row">
+                <div class="metric-card"><div class="label">Train Samples</div><div class="value">{len(x_train):,}</div></div>
+                <div class="metric-card"><div class="label">Val Samples</div><div class="value">{len(x_test):,}</div></div>
+                <div class="metric-card"><div class="label">Features</div><div class="value">{x_train.shape[1]}</div></div>
+                <div class="metric-card"><div class="label">Outputs</div><div class="value">{y_train.shape[1]}</div></div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            with st.spinner("Training Gradient Boosting model…"):
+
+                base_model = GradientBoostingRegressor(
+                    n_estimators=300,
+                    learning_rate=0.05,
+                    max_depth=4,
+                    random_state=42
+                )
+
+                model = MultiOutputRegressor(base_model)
+                model.fit(x_train, y_train)
+
+            # Predictions
+            y_train_pred = model.predict(x_train)
+            y_test_pred = model.predict(x_test)
+
+            train_mae = mean_absolute_error(y_train, y_train_pred)
+            val_mae = mean_absolute_error(y_test, y_test_pred)
+
+            st.success(
+                f"✅ Training Complete! — Train MAE: {train_mae:.4f} | Val MAE: {val_mae:.4f}"
             )
-            os.unlink(tmp_path)
 
-        # Flatten input if needed (CNN كان بياخد 3D)
-        if len(x_train.shape) > 2:
-            x_train = x_train.reshape(x_train.shape[0], -1)
-            x_test = x_test.reshape(x_test.shape[0], -1)
+            # Save model
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pkl") as tmp_model:
+                joblib.dump(model, tmp_model.name)
+                with open(tmp_model.name, "rb") as f:
+                    model_bytes = f.read()
+                os.unlink(tmp_model.name)
 
-        st.markdown(f"""
-        <div class="metric-row">
-            <div class="metric-card"><div class="label">Train Samples</div><div class="value">{len(x_train):,}</div></div>
-            <div class="metric-card"><div class="label">Val Samples</div><div class="value">{len(x_test):,}</div></div>
-            <div class="metric-card"><div class="label">Features</div><div class="value">{x_train.shape[1]}</div></div>
-            <div class="metric-card"><div class="label">Outputs</div><div class="value">{y_train.shape[1]}</div></div>
+            st.download_button(
+                "📥 Download Trained Model (.pkl)",
+                data=model_bytes,
+                file_name="eis_gradient_boost_model.pkl",
+                mime="application/octet-stream",
+                use_container_width=True,
+            )
+
+        except Exception as e:
+            st.error(f"❌ Training failed: {str(e)}")
+            st.exception(e)
+
+    else:
+        st.markdown("""
+        <div class="glass-card" style="text-align:center; padding:3.5rem 2rem;">
+            <h3 style="color:#8b5cf6; font-size:1.3rem;">📤 Upload a .mat dataset to begin training</h3>
+            <p style="color:#64748b; margin-top:0.6rem;">The file should contain <code>x_data</code> (spectra) and <code>y_data</code> (parameters) arrays.</p>
         </div>
         """, unsafe_allow_html=True)
-
-        with st.spinner("Training Gradient Boosting model…"):
-
-            base_model = GradientBoostingRegressor(
-                n_estimators=300,
-                learning_rate=0.05,
-                max_depth=4,
-                random_state=42
-            )
-
-            model = MultiOutputRegressor(base_model)
-            model.fit(x_train, y_train)
-
-        # Predictions
-        y_train_pred = model.predict(x_train)
-        y_test_pred = model.predict(x_test)
-
-        train_mae = mean_absolute_error(y_train, y_train_pred)
-        val_mae = mean_absolute_error(y_test, y_test_pred)
-
-        st.success(
-            f"✅ Training Complete! — Train MAE: {train_mae:.4f} | Val MAE: {val_mae:.4f}"
-        )
-
-        # Save model
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pkl") as tmp_model:
-            joblib.dump(model, tmp_model.name)
-            with open(tmp_model.name, "rb") as f:
-                model_bytes = f.read()
-            os.unlink(tmp_model.name)
-
-        st.download_button(
-            "📥 Download Trained Model (.pkl)",
-            data=model_bytes,
-            file_name="eis_gradient_boost_model.pkl",
-            mime="application/octet-stream",
-            use_container_width=True,
-        )
-
-    except Exception as e:
-        st.error(f"❌ Training failed: {str(e)}")
-        st.exception(e)
-
-else:
-    st.markdown("""
-    <div class="glass-card" style="text-align:center; padding:3.5rem 2rem;">
-        <h3 style="color:#8b5cf6; font-size:1.3rem;">📤 Upload a .mat dataset to begin training</h3>
-        <p style="color:#64748b; margin-top:0.6rem;">The file should contain <code>x_data</code> (spectra) and <code>y_data</code> (parameters) arrays.</p>
-    </div>
-    """, unsafe_allow_html=True)
 
         # Architecture info cards
         st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
