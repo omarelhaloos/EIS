@@ -2,11 +2,10 @@
 EIS Analyzer — Streamlit Application
 Interactive Electrochemical Impedance Spectroscopy simulator and ML-based parameter predictor.
 
-Four pages:
+Three pages:
   1. 🔬 EIS Simulator      — generate impedance spectra with interactive controls
   2. 🧠 Model Training     — train a 1D-CNN regression model
-  3. 📊 Model Evaluation   — evaluate predictions vs ground truth
-  4. 📉 Corrosion Predictor — industrial corrosion rate prediction from EIS data
+  3. 📉 Corrosion Predictor — industrial corrosion rate prediction from EIS data
 
 Author: Dulyawat Doonyapisut (charting9@gmail.com)
 """
@@ -567,7 +566,7 @@ with st.sidebar:
     st.markdown("---")
     page = st.radio(
         "Navigate",
-        ["🔬 EIS Simulator", "🧠 Model Training", "📊 Model Evaluation", "📉 Corrosion Predictor"],
+        ["🔬 EIS Simulator", "🧠 Model Training", "📉 Corrosion Predictor"],
         label_visibility="collapsed",
     )
     st.markdown("---")
@@ -994,207 +993,13 @@ elif page == "🧠 Model Training":
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# PAGE 3: Model Evaluation
-# ═══════════════════════════════════════════════════════════════════════════
-elif page == "📊 Model Evaluation":
-    st.markdown("""
-    <div class="main-header">
-        <h1>Model Evaluation</h1>
-        <p>Evaluate trained model predictions against ground-truth circuit parameters</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    col_up1, col_up2 = st.columns(2)
-    with col_up1:
-        model_file = st.file_uploader(
-            "📂 Upload trained model (.h5)",
-            type=["h5"],
-            help="Upload the trained Keras model file",
-        )
-    with col_up2:
-        test_file = st.file_uploader(
-            "📂 Upload test data (.mat)",
-            type=["mat"],
-            help="Upload a .mat file with x_data and y_data for evaluation",
-        )
-
-    n_samples = st.slider("Number of samples to evaluate", 20, 500, 100, step=10,
-                           help="First N samples used for per-parameter metrics and plots")
-
-    if model_file is not None and test_file is not None:
-        if st.button("🔍 Run Evaluation", use_container_width=True):
-            try:
-                import tensorflow as tf
-                from ml_model import load_and_preprocess_data, evaluate_model, PARAM_NAMES
-
-                with st.spinner("Loading model & data…"):
-                    # Save files to temp
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".h5") as tmp_m:
-                        tmp_m.write(model_file.getvalue())
-                        tmp_m_path = tmp_m.name
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".mat") as tmp_d:
-                        tmp_d.write(test_file.getvalue())
-                        tmp_d_path = tmp_d.name
-
-                    predict_model = tf.keras.models.load_model(tmp_m_path)
-                    _, x_test, _, y_test = load_and_preprocess_data(
-                        tmp_d_path, test_size=0.2, is_test=True,
-                    )
-                    os.unlink(tmp_m_path)
-                    os.unlink(tmp_d_path)
-
-                with st.spinner("Running predictions…"):
-                    y_pred, metrics = evaluate_model(predict_model, x_test, y_test, n_samples=n_samples)
-
-                # Metrics summary table
-                st.markdown('<div class="glass-card"><h3>📊 Performance Metrics</h3></div>', unsafe_allow_html=True)
-
-                metrics_df = pd.DataFrame(metrics).T
-                metrics_df.index.name = "Parameter"
-
-                # Color-coded metric cards
-                cols = st.columns(len(PARAM_NAMES))
-                for i, name in enumerate(PARAM_NAMES):
-                    with cols[i]:
-                        r2_val = metrics[name]["R²"]
-                        color = "#10b981" if r2_val > 0.9 else ("#f59e0b" if r2_val > 0.7 else "#ef4444")
-                        st.markdown(f"""
-                        <div class="metric-card">
-                            <div class="label">{name} R²</div>
-                            <div class="value" style="color:{color};">{r2_val:.4f}</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-
-                st.dataframe(
-                    metrics_df.style.format("{:.4f}"),
-                    use_container_width=True,
-                )
-
-                # Per-parameter comparison plots
-                st.markdown('<div class="glass-card"><h3>📈 Predicted vs Actual</h3></div>', unsafe_allow_html=True)
-
-                n_params = len(PARAM_NAMES)
-                n_cols = 3
-                n_rows = (n_params + n_cols - 1) // n_cols
-
-                fig = make_subplots(
-                    rows=n_rows, cols=n_cols,
-                    subplot_titles=PARAM_NAMES,
-                    vertical_spacing=0.12,
-                    horizontal_spacing=0.08,
-                )
-
-                for i, name in enumerate(PARAM_NAMES):
-                    row = i // n_cols + 1
-                    col = i % n_cols + 1
-                    a = y_test[:n_samples, i]
-                    b = y_pred[:n_samples, i]
-
-                    fig.add_trace(go.Scatter(
-                        x=list(range(n_samples)), y=a,
-                        mode="markers", name=f"{name} Actual",
-                        marker=dict(color="#ef4444", size=5, symbol="star"),
-                        showlegend=(i == 0),
-                    ), row=row, col=col)
-                    fig.add_trace(go.Scatter(
-                        x=list(range(n_samples)), y=b,
-                        mode="markers", name=f"{name} Predicted",
-                        marker=dict(color="#6366f1", size=7, symbol="circle-open", line=dict(width=1.5)),
-                        showlegend=(i == 0),
-                    ), row=row, col=col)
-
-                fig.update_layout(
-                    **PLOTLY_LAYOUT,
-                    height=350 * n_rows,
-                    title="",
-                    legend=dict(
-                        orientation="h", yanchor="bottom", y=1.02,
-                        xanchor="center", x=0.5,
-                        font=dict(size=12),
-                    ),
-                )
-                # Rename legend entries generically
-                fig.data[0].name = "Actual"
-                fig.data[1].name = "Predicted"
-                st.plotly_chart(fig, use_container_width=True)
-
-                # Scatter: predicted vs actual (1:1 line)
-                st.markdown('<div class="glass-card"><h3>🎯 Prediction Accuracy (1:1 Scatter)</h3></div>', unsafe_allow_html=True)
-                fig2 = make_subplots(
-                    rows=n_rows, cols=n_cols,
-                    subplot_titles=PARAM_NAMES,
-                    vertical_spacing=0.12,
-                    horizontal_spacing=0.08,
-                )
-                for i, name in enumerate(PARAM_NAMES):
-                    row = i // n_cols + 1
-                    col = i % n_cols + 1
-                    a = y_test[:n_samples, i]
-                    b = y_pred[:n_samples, i]
-                    min_val = min(a.min(), b.min())
-                    max_val = max(a.max(), b.max())
-
-                    fig2.add_trace(go.Scatter(
-                        x=a, y=b, mode="markers",
-                        marker=dict(color="#8b5cf6", size=5, opacity=0.7),
-                        showlegend=False,
-                    ), row=row, col=col)
-                    # 1:1 line
-                    fig2.add_trace(go.Scatter(
-                        x=[min_val, max_val], y=[min_val, max_val],
-                        mode="lines", line=dict(color="#ef4444", dash="dash", width=1),
-                        showlegend=False,
-                    ), row=row, col=col)
-                    fig2.update_xaxes(title_text="Actual", row=row, col=col)
-                    fig2.update_yaxes(title_text="Predicted", row=row, col=col)
-
-                fig2.update_layout(**PLOTLY_LAYOUT, height=350 * n_rows)
-                st.plotly_chart(fig2, use_container_width=True)
-
-            except Exception as e:
-                st.error(f"❌ Evaluation failed: {str(e)}")
-                st.exception(e)
-    else:
-        st.markdown("""
-        <div class="glass-card" style="text-align:center; padding:3rem;">
-            <h3 style="color:#8b5cf6;">Upload a trained model (.h5) and test data (.mat) to begin evaluation</h3>
-            <p style="color:#64748b;">The evaluation will compute R², MAE, MAPE, and MSE for each predicted parameter.</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-        # Info cards
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            st.markdown("""
-            <div class="glass-card">
-                <h3 style="color:#10b981;">R² Score</h3>
-                <p style="color:#94a3b8;">Coefficient of determination — measures how well predictions match actual values. Closer to 1.0 is better.</p>
-            </div>
-            """, unsafe_allow_html=True)
-        with c2:
-            st.markdown("""
-            <div class="glass-card">
-                <h3 style="color:#f59e0b;">MAE / MAPE</h3>
-                <p style="color:#94a3b8;">Mean Absolute Error and Mean Absolute Percentage Error — average prediction deviation.</p>
-            </div>
-            """, unsafe_allow_html=True)
-        with c3:
-            st.markdown("""
-            <div class="glass-card">
-                <h3 style="color:#ef4444;">MSE</h3>
-                <p style="color:#94a3b8;">Mean Squared Error — penalizes larger errors more heavily than MAE.</p>
-            </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# PAGE 4: Corrosion Predictor
+# PAGE 3: Corrosion Predictor
 # ═══════════════════════════════════════════════════════════════════════════
 elif page == "📉 Corrosion Predictor":
     from corrosion_predictor import (
         load_model as cp_load_model,
         load_spectrum,
+        load_mat_spectrum,
         build_feature_vector,
         predict_corrosion,
         classify_risk,
@@ -1203,6 +1008,7 @@ elif page == "📉 Corrosion Predictor":
         MATERIAL_TYPES,
     )
 
+
     # Header
     st.markdown("""
     <div class="main-header">
@@ -1210,6 +1016,7 @@ elif page == "📉 Corrosion Predictor":
         <p>Predict corrosion rates from EIS spectrum data and environmental conditions</p>
     </div>
     """, unsafe_allow_html=True)
+
 
     # ── Load environment ranges from CSV ──
     _csv_path = os.path.join(os.path.dirname(__file__), "corrosion_pipeline_data.csv")
