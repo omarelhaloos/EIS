@@ -1004,9 +1004,158 @@ elif page == "📉 EIS Spectrum Prediction":
         predict_corrosion,
         classify_risk,
         create_gauge_chart,
-        get_env_ranges,
-        MATERIAL_TYPES,
     )
+
+    # Header
+    st.markdown("""
+    <div class="main-header">
+        <h1>EIS Spectrum Prediction</h1>
+        <p>Predict corrosion rate from EIS spectrum data using a trained model</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Description card
+    st.markdown("""
+    <div class="glass-card">
+        <h3 style="color:#8b5cf6;">🔬 EIS Spectrum-Based Prediction</h3>
+        <p style="color:#94a3b8;">Upload a trained model (.pkl) and EIS spectrum data (.mat or .csv)
+        to predict corrosion rate. Environmental conditions are ignored for this prediction mode.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # File uploaders
+    col_up1, col_up2 = st.columns(2)
+    with col_up1:
+        model_file = st.file_uploader(
+            "📂 Upload trained model (.pkl)",
+            type=["pkl"],
+            help="Upload a scikit-learn model saved with joblib",
+            key="eis_model_upload",
+        )
+    with col_up2:
+        spectrum_file = st.file_uploader(
+            "📂 Upload EIS spectrum (.mat or .csv)",
+            type=["mat", "csv"],
+            help="Upload a .mat file (same format as training) or a CSV with EIS impedance data",
+            key="eis_spectrum_upload",
+        )
+
+    # Predict button
+    if st.button("⚡ Predict Corrosion Rate", use_container_width=True, key="eis_predict"):
+        if model_file is None:
+            st.error("❌ Please upload a trained model (.pkl) file.")
+        elif spectrum_file is None:
+            st.error("❌ Please upload an EIS spectrum (.mat or .csv) file.")
+        else:
+            try:
+                with st.spinner("Loading model…"):
+                    model = cp_load_model(model_file)
+
+                with st.spinner("Processing spectrum…"):
+                    file_name = spectrum_file.name.lower()
+                    if file_name.endswith(".mat"):
+                        spectrum = load_mat_spectrum(spectrum_file)
+                    else:
+                        spectrum = load_spectrum(spectrum_file)
+
+                with st.spinner("Building features & predicting…"):
+                    # Use default environmental values as placeholders
+                    # (Models trained on spectrum+env might need them, but user requested removal from UI)
+                    features = build_feature_vector(
+                        spectrum=spectrum,
+                        material="Carbon Steel",
+                        temperature=25.0,
+                        pressure=1.0,
+                        ph=7.0,
+                        sulfur=0.0,
+                        flow_velocity=0.0,
+                        service_years=0,
+                    )
+                    corrosion_rate = predict_corrosion(model, features)
+                    risk_label, risk_color, risk_bg, risk_border = classify_risk(corrosion_rate)
+
+                # Results
+                st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+                st.markdown(f"""
+                <div class="metric-row">
+                    <div class="metric-card" style="flex:2;">
+                        <div class="label">Predicted Corrosion Rate</div>
+                        <div class="value" style="font-size:2rem; color:{risk_color};">
+                            {corrosion_rate:.4f} <span style="font-size:0.9rem;">mm/yr</span>
+                        </div>
+                    </div>
+                    <div class="metric-card" style="flex:1; border-color:{risk_border}; background:{risk_bg};">
+                        <div class="label">Risk Level</div>
+                        <div class="value" style="font-size:1.8rem; color:{risk_color};">
+                            {"🟢" if risk_label == "Low" else "🟡" if risk_label == "Moderate" else "🔴"} {risk_label}
+                        </div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="label">Features Used</div>
+                        <div class="value">{features['full'].shape[1]}</div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                # Gauge chart
+                st.markdown('<div class="glass-card"><h3>📊 Corrosion Gauge</h3></div>',
+                            unsafe_allow_html=True)
+                gauge_fig = create_gauge_chart(corrosion_rate, risk_label, risk_color)
+                st.plotly_chart(gauge_fig, use_container_width=True)
+
+                # Risk summary table (Simplified)
+                st.markdown(f"""
+                <div class="glass-card">
+                    <h3>📋 Risk Assessment Summary</h3>
+                    <table style="width:100%; border-collapse:collapse; margin-top:0.8rem;">
+                        <tr style="border-bottom:1px solid rgba(99,102,241,0.15);">
+                            <td style="padding:0.6rem; color:#94a3b8;">Risk Level</td>
+                            <td style="padding:0.6rem; font-weight:700; color:{risk_color};">{risk_label}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding:0.6rem; color:#94a3b8;">Corrosion Rate</td>
+                            <td style="padding:0.6rem; color:#e8edf5;">{corrosion_rate:.4f} mm/yr</td>
+                        </tr>
+                    </table>
+                </div>
+                """, unsafe_allow_html=True)
+
+            except ValueError as ve:
+                st.error(f"❌ Validation Error: {ve}")
+            except Exception as e:
+                st.error(f"❌ Prediction failed: {str(e)}")
+                st.exception(e)
+
+    else:
+        # Placeholder
+        st.markdown("""
+        <div class="glass-card" style="text-align:center; padding:3.5rem 2rem;">
+            <h3 style="color:#8b5cf6; font-size:1.3rem;">Upload a trained model (.pkl) and EIS spectrum (.mat) to predict corrosion rate</h3>
+            <p style="color:#64748b; margin-top:0.6rem;">Click ⚡ Predict to start analysis.</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+        st.markdown("### 🎯 Risk Classification")
+        risk_cols = st.columns(3)
+        risk_items = [
+            ("🟢", "Low Risk", "< 0.1 mm/yr", "Minimal corrosion — safe for continued operation", "fc-green"),
+            ("🟡", "Moderate Risk", "0.1 – 0.5 mm/yr", "Noticeable corrosion — schedule maintenance", "fc-amber"),
+            ("🔴", "Severe Risk", "≥ 0.5 mm/yr", "Critical corrosion — immediate action required", "fc-purple"),
+        ]
+        for col, (icon, title, threshold, desc, color) in zip(risk_cols, risk_items):
+            with col:
+                st.markdown(f"""
+                <div class="feature-card {color}">
+                    <span class="fc-icon">{icon}</span>
+                    <div class="fc-title">{title}</div>
+                    <div class="fc-desc" style="font-weight:700; margin-bottom:0.3rem;">{threshold}</div>
+                    <div class="fc-desc">{desc}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+
+
 
     # Header
     st.markdown("""
