@@ -582,7 +582,7 @@ with st.sidebar:
 # PAGE 1: EIS Simulator
 # ═══════════════════════════════════════════════════════════════════════════
 if page == "🔬 EIS Simulator":
-    from eis_simulation import (
+    from utils.eis_simulation import (
         F_range, sim_circuit, CIRCUIT_INFO, export_data,
     )
 
@@ -890,7 +890,7 @@ elif page == "🧠 Model Training":
 
     if st.button("🚀 Start Training", use_container_width=True):
         try:
-            from ml_model import load_and_preprocess_data
+            from utils.ml_model import load_and_preprocess_data
             from sklearn.ensemble import GradientBoostingRegressor
             from sklearn.multioutput import MultiOutputRegressor
             from sklearn.metrics import mean_absolute_error
@@ -996,7 +996,7 @@ elif page == "🧠 Model Training":
 # PAGE 3: EIS Spectrum Prediction
 # ═══════════════════════════════════════════════════════════════════════════
 elif page == "📉 EIS Spectrum Prediction":
-    from corrosion_predictor import (
+    from utils.corrosion_predictor import (
         load_model as cp_load_model,
         load_spectrum,
         load_mat_spectrum,
@@ -1166,7 +1166,7 @@ elif page == "📉 EIS Spectrum Prediction":
     """, unsafe_allow_html=True)
 
     # Load environment ranges
-    _csv_path = os.path.join(os.path.dirname(__file__), "corrosion_pipeline_data.csv")
+    _csv_path = os.path.join(os.path.dirname(__file__), "data", "corrosion_pipeline_data.csv")
     env_ranges = get_env_ranges(_csv_path)
 
     # Sidebar: Environmental Conditions
@@ -1412,7 +1412,7 @@ elif page == "📉 EIS Spectrum Prediction":
 # PAGE 4: Environmental Prediction
 # ═══════════════════════════════════════════════════════════════════════════
 elif page == "🌡️ Environmental Prediction":
-    from corrosion_predictor import (
+    from utils.corrosion_predictor import (
         classify_risk,
         create_gauge_chart,
         get_env_ranges,
@@ -1430,7 +1430,7 @@ elif page == "🌡️ Environmental Prediction":
     """, unsafe_allow_html=True)
 
     # Load environment ranges
-    _csv_path = os.path.join(os.path.dirname(__file__), "corrosion_pipeline_data.csv")
+    _csv_path = os.path.join(os.path.dirname(__file__), "data", "corrosion_pipeline_data.csv")
     env_ranges = get_env_ranges(_csv_path)
 
     # Sidebar: Environmental Conditions
